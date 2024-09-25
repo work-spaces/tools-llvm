@@ -1,5 +1,5 @@
 """
-
+Builing LLVM using Spaces
 """
 
 checkout.update_env(
@@ -15,6 +15,15 @@ checkout.update_env(
 checkout.add_repo(
     rule = {"name": "tools/sysroot-ninja"},
     repo = {"url": "https://github.com/work-spaces/sysroot-ninja", "rev": "v1", "checkout": "Revision"},
+)
+
+checkout.add_repo(
+    rule = {"name": "tools/sysroot-gh"},
+    repo = {
+        "url": "https://github.com/work-spaces/sysroot-gh",
+        "rev": "v2",
+        "checkout": "Revision",
+    },
 )
 
 checkout.add_repo(
@@ -40,7 +49,7 @@ checkout.add_archive(
     },
 )
 
-workspace = info.absolute_workspace_path()
+workspace = info.get_absolute_path_to_workspace()
 
 run.add_exec(
     rule = {"name": "configure-llvm"},
@@ -50,7 +59,7 @@ run.add_exec(
             "-GNinja",
             "-Bbuild/llvm",
             "-Sllvm-project/llvm",
-            "-DCMAKE_INSTALL_PREFIX={}/build/install".format(workspace),
+            "-DCMAKE_INSTALL_PREFIX={}/build/install/llvm".format(workspace),
             "-DLLVM_ENABLE_PROJECTS=clang;clang-tools-extra;lld",
             "-DCMAKE_BUILD_TYPE=MinSizeRel",
         ],
@@ -68,25 +77,87 @@ run.add_exec(
 )
 
 run.add_exec(
-    rule = {"name": "install-llvm", "deps": ["build-llvm"]},
+    rule = {"name": "test-llvm", "deps": ["build-llvm"]},
     exec = {
         "command": "ninja",
         "args": [
             "-Cbuild/llvm",
-            "install"
+            "check-all",
+        ],
+    },
+)
+
+run.add_exec(
+    rule = {"name": "install-llvm", "deps": ["test-llvm"] },
+    exec = {
+        "command": "ninja",
+        "args": [
+            "-Cbuild/llvm",
+            "install",
         ],
     },
 )
 
 platform = info.platform_name()
 
+archive_info = {
+    "input": "build/install/llvm",
+    "name": "llvm",
+    "version": version,
+    "driver": "tar.xz",
+    "platform": platform,
+}
+
+archive_output = info.get_path_to_build_archive(rule_name = "archive-llvm", archive = archive_info)
+
 run.add_archive(
-    rule = {"name": "acrhive-llvm", "deps": ["install-llvm"]},
-    archive = {
-        "input": "build/install",
-        "name": "llvm",
-        "version": version,
-        "driver": "tar.xz",
-        "platform": platform,
+    rule = {"name": "archive-llvm", "deps": ["install-llvm"]},
+    archive = archive_info,
+)
+
+deploy_repo = "https://github.com/work-spaces/tools-llvm"
+repo_arg = "--repo={}".format(deploy_repo)
+archive_name = "llvm-v{}".format(version)
+
+run.add_exec(
+    rule = {"name": "check_release", "inputs": [archive_output]},
+    exec = {
+        "command": "gh",
+        "args": [
+            "release",
+            "view",
+            archive_name,
+            repo_arg,
+        ],
+        "expect": "Failure",
+    },
+)
+
+run.add_exec(
+    rule = {"name": "upload", "deps": ["check_release"], "inputs": [archive_output]},
+    exec = {
+        "command": "gh",
+        "args": [
+            "release",
+            "upload",
+            archive_name,
+            archive_output,
+            repo_arg,
+        ],
+    },
+)
+
+run.add_exec(
+    rule = {"name": "release", "deps": ["upload"]},
+    exec = {
+        "command": "gh",
+        "working_directory": "tools-llvm",
+        "args": [
+            "release",
+            "create",
+            archive_name,
+            "--generate-notes",
+            repo_arg,
+        ],
     },
 )
