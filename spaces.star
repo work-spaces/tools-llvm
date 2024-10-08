@@ -2,17 +2,7 @@
 Builing LLVM using Spaces
 """
 
-load("tools-llvm/config.star", "version", "sha256")
-
-checkout.update_env(
-    rule = {"name": "update_env"},
-    env = {
-        "paths": ["/usr/bin", "/bin"],
-        "vars": {
-            "PS1": '"(spaces) $PS1"',
-        },
-    },
-)
+load("tools-llvm/config.star", "sha256", "version")
 
 checkout.add_repo(
     rule = {"name": "tools/sysroot-ninja"},
